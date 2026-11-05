@@ -1,0 +1,14 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Venu
+venv/
+
+# Files
+.pytest_cache/
+class_mc/
+data/
+__pycache__/
+.pytest_cache/
