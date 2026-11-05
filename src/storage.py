@@ -17,10 +17,27 @@ class MovieStorage:
     def save(self, df):
         """Replace all movie rows in one transaction."""
         # TODO: Convert missing values to Python None for SQL NULL.
+        clean = df.astype(object).where(pd.notna(df), None)
+        rows = clean[MOVIE_COLUMNS].intertuples(index=False, name=None)
         # DELETE the old rows, then INSERT all rows from df.
-        # Commit only after all inserts succeed; roll back on SQLite errors.
-        # Close the connection in finally. Log the saved row count at DEBUG.
-        pass
+
+        connection = get_connection(self.db_path)
+
+        sql_statement_del = "DELETE FROM movie"
+        sql_statement_insert = "INSERT INTO movie (title, release_year, rating, genre) VALUES (?, ?, ?, ?)"
+
+        try:
+            connection.execute(sql_statement_del)
+            connection.executemany(sql_statement_insert, rows)
+            connection.commit()
+            logger.debug(f"Saved {len(df)} rows to database.")
+        except sqlite3.Error:
+            connection.rollback()
+            raise
+        finally:
+            # Commit only after all inserts succeed; roll back on SQLite errors.
+            # Close the connection in finally. Log the saved row count at DEBUG.
+            connection.close()
 
     def get(self):
         """Return the four movie columns as a DataFrame, ordered by id."""
