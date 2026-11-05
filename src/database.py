@@ -19,12 +19,12 @@ def initialize_database(db_path):
     connection = get_connection(db_path)
 
     sql_statement = """
-    CREATE TABLE IF NOT EXISTS movie (
+    CREATE TABLE IF NOT EXISTS movies (
         id INTEGER PRIMARY KEY,
         title TEXT,
         release_year INTEGER,
         rating REAL,
-        genres TEXT 
+        genre TEXT 
     )
     """
 
