@@ -42,9 +42,13 @@ class MovieStorage:
     def get(self):
         """Return the four movie columns as a DataFrame, ordered by id."""
         # TODO: SELECT the four fields, fetch rows, and create the DataFrame.
+        connection = get_connection(self.db_path)
+        data = connection.execute(f"SELECT * FROM movies ORDER BY id DESC").fetchall()
+
         # Return a DataFrame with columns=MOVIE_COLUMNS,
+        df = pd.DataFrame(data, columns=["id", "title", "release_year", "rating", "genre"])
         # so the column names are preserved even when the query returns no rows.
-        pass
+        return df
 
     def select_columns(self, columns, limit=5):
         """Return id plus the requested movie columns, ordered by id."""
@@ -61,15 +65,22 @@ class MovieStorage:
         connection = get_connection(self.db_path)
         try:
             # TODO: SELECT selected_columns from movies, ordered by id.
+            connection.execute('SELECT ? FROM movies ORDER BY id DESC LIMIT ?',
+                               (selected_columns, limit)).fetchall()
             # Use a placeholder for limit; fetch the rows.
             # Return a list of dictionaries and log at DEBUG.
-            pass
+            list_dict = list(dict.fromkeys(selected_columns))
+            logger.debug(f"Returned list of columns.") # REDO
+            return list_dict
         finally:
             connection.close()
 
     def count_movies(self):
         """Return the number of stored movies using SQL COUNT(*)."""
-        pass
+        connection = get_connection(self.db_path)
+        sql_statement = "SELECT COUNT(*) FROM movies"
+        count = connection.execute(sql_statement).fetchone([0])
+        return count
 
     def query_movies(self, columns, min_rating, limit):
         """Return selected fields from matching movies using SQL."""
