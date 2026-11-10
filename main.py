@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from src import (DatasetInfo, MovieStorage, HealthResponse,
-                 setup_logging, ProcessingReport, ProcessConfig,
+from src import (DatasetInfo, MovieStorage, HealthResponse, MovieCache,
+                 setup_logging, ProcessingReport, ProcessConfig, log_requests,
                  MovieUploadInfo, MovieDataResponse, MovieProcessingReport)
 
 from src.storage import MOVIE_COLUMNS
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Data Processing API", version="1.0.0")
 app.middleware("http")(log_requests)
 storage = MovieStorage()
+cache = MovieCache()
 
 @app.get("/health", response_model=HealthResponse)
 def health_check():
