@@ -1,11 +1,10 @@
 import io
-import json
 import logging
 from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from src import (DatasetInfo, MovieStorage, HealthResponse, MovieCache,
-                 setup_logging, ProcessingReport, ProcessConfig, log_requests,
+from src import (MovieStorage, HealthResponse, MovieCache,
+                 setup_logging, ProcessConfig, log_requests,
                  MovieUploadInfo, MovieDataResponse, MovieProcessingReport)
 
 from src.storage import MOVIE_COLUMNS
@@ -64,20 +63,19 @@ async def upload_movies(file: UploadFile = File(...)):
     # TODO 3: Call storage.save(df) to replace the current collection.
     storage.save(df)
     # Log the filename and saved row count at INFO.
-    logger.info(f'Movie upload successful. \n Filename: {file.filename} | Rows: {len(df)}')
+    logger.info("Uploaded movies: filename=%s, rows=%d", file.filename, len(df))
     # Return filename, rows, columns, and column_names for this upload.
-    return DatasetInfo(filename=file.filename, rows=df.shape[0], columns=df.shape[1], column_names=df.columns())
+    return {"filename":file.filename, "rows":df.shape[0], "columns":df.shape[1],
+            "column_names":df.columns.tolist()}
 
 @app.get("/movies", response_model=MovieDataResponse)
 def get_movies(limit: int = Query(default=100, ge=1)):
     # TODO: Use MovieStorage methods to retrieve up to limit rows and count the total number of stored movies.
-    rows = storage.select_columns("*", limit)
+    rows = storage.select_columns(MOVIE_COLUMNS, limit)
     count = storage.count_movies()
     # Log the row count at INFO.
-    logger.info(f'Returned {len(rows)} rows')
+    logger.info(f"Retrieved movies: returned_rows = {len(rows)}, total_rows={count}")
     # Return {"data": ..., "total_rows": ...}.
-    if rows is None:
-        return {"data": [], "total_rows": []}
     return {"data": rows, "total_rows": count}
 
 @app.post("/movies/process", response_model=MovieProcessingReport)
@@ -85,8 +83,8 @@ def process_movies(config: ProcessConfig):
     # TODO 1: Retrieve data using storage.get().
     # Raise HTTPException with status 400 if empty.
     df = storage.get()
-    if df is None:
-        raise HTTPException(404,' Data is empty')
+    if df.empty:
+        raise HTTPException(400, "Movie collection is empty")
 
     # TODO 2: Reuse MP2's configuration, validation, processing,
     # cleaning report, logging, and ValueError handling.
@@ -124,11 +122,13 @@ def process_movies(config: ProcessConfig):
     report = create_cleaning_report(df_validated_copy, df_processed)
 
     # TODO 3: Save the processed DataFrame using storage.save().
-    storage.save(df_processed)
+    # Keep the fixed SQLite schema when processing drops a column.
+    storage.save(df_processed.reindex(columns=MOVIE_COLUMNS))
+    logger.info(
+        f"Processed movies: validation_removed={rows_removed}, "
+        f"rows_before={len(df_validated_copy)}, rows_after={len(df_processed)}")
     # Return validation_rows_removed and cleaning_report without a dataset ID.
-    return {'validated_rows_removed': rows_removed,
-            'cleaning_report': report
-            }
+    return {"validation_rows_removed": rows_removed, "cleaning_report": report}
 
 @app.get("/movies/search", response_model=list[dict])
 def query_movies(
@@ -137,7 +137,14 @@ def query_movies(
     limit: int = Query(default=100, ge=1)
 ):
     # TODO: Call storage.query_movies(columns, min_rating, limit).
-    # Catch ValueError and raise HTTPException with status 400.
-    # Return id plus the selected fields, or [] if there are no matches.
-    # Log the selected columns and returned row count at INFO.
-    pass
+    try:
+        rows = storage.query_movies(columns, min_rating, limit)
+        # Log the selected columns and returned row count at INFO.
+        logger.info(
+            f"Queried movies: columns={columns}, "
+            f"min_rating={min_rating}, returned_rows={len(rows)}")
+        # Return id plus the selected fields, or [] if there are no matches.
+        return rows
+    except ValueError as error:
+        # Catch ValueError and raise HTTPException with status 400.
+        raise HTTPException(status_code=400, detail=str(error))

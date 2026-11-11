@@ -30,7 +30,7 @@ class MovieStorage:
             connection.execute(sql_statement_del)
             connection.executemany(sql_statement_insert, rows)
             connection.commit()
-            logger.debug(f"Saved {len(df)} rows to database.")
+            logger.debug("Stored movies in SQLite: rows=%d", len(df))
         except sqlite3.Error:
             connection.rollback()
             raise
@@ -44,12 +44,9 @@ class MovieStorage:
         # TODO: SELECT the four fields, fetch rows, and create the DataFrame.
         connection = get_connection(self.db_path)
         try:
-            data = connection.execute(f"SELECT * FROM movies ORDER BY id").fetchall()
-
-        # Return a DataFrame with columns=MOVIE_COLUMNS,
-            df = pd.DataFrame(data, columns=MOVIE_COLUMNS)
-        # so the column names are preserved even when the query returns no rows.
-            return df
+            fields = ", ".join(MOVIE_COLUMNS)
+            rows = connection.execute(f"SELECT {fields} FROM movies ORDER BY id").fetchall()
+            return pd.DataFrame(rows, columns=MOVIE_COLUMNS)
         finally:
             connection.close()
 
@@ -68,13 +65,12 @@ class MovieStorage:
         connection = get_connection(self.db_path)
         try:
             # TODO: SELECT selected_columns from movies, ordered by id.
-            data = connection.execute(f'SELECT {selected_columns} FROM movies ORDER BY id LIMIT ?',
+            rows = connection.execute(f'SELECT {selected_columns} FROM movies ORDER BY id LIMIT ?',
                                (limit,)).fetchall()
             # Use a placeholder for limit; fetch the rows.
             # Return a list of dictionaries and log at DEBUG.
-            list_dict = list(dict.fromkeys(data))
-            logger.debug(f"Selected {len(data)} of columns.") # REDO
-            return list_dict
+            logger.debug("Selected movies: columns=%s, returned_rows=%d", columns, len(rows))
+            return [dict(row) for row in rows]
         finally:
             connection.close()
 
@@ -102,9 +98,15 @@ class MovieStorage:
 
         # SELECT id plus those columns and filter by minimum rating.
         connection = get_connection(self.db_path)
+        selected_columns = ", ".join(["id"] + columns)
         # Sort by rating DESC then id ASC, and apply limit.
-        sql_statement = f"SELECT ID, {columns} FROM movies WHERE rating >= ? ORDER BY id LIMIT ?"
-        rows = connection.execute(sql_statement, (min_rating, limit)).fetchall()
-        # Return dictionaries and log the selected columns and row count at DEBUG.
-        logger.debug(f"Returned {len(rows)} rows.")
-        return [dict(row) for row in rows]
+        sql_statement = (f"SELECT {selected_columns} FROM movies "
+                         "WHERE rating >= ? "
+                         "ORDER BY rating DESC, id ASC "
+                         "LIMIT ?")
+        try:
+            rows = connection.execute(sql_statement, (min_rating, limit)).fetchall()
+            logger.debug("Queried movies: columns=%s, returned_rows=%d", columns, len(rows))
+            return [dict(row) for row in rows]
+        finally:
+            connection.close()
