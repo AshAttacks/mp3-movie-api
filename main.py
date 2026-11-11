@@ -25,10 +25,10 @@ def health_check():
     """Return the application status and version."""
     return HealthResponse(status='ok', version='1.0.0')
 
-# TODO REMOVE THIS ONE AFTER DONE WITH UPDATED UPLOAD
-@app.post("/upload", response_model=DatasetInfo)
-async def upload_dataset(file: UploadFile = File(...)):
-    """Read and store a CSV upload."""
+@app.post("/upload", response_model=MovieUploadInfo)
+async def upload_movies(file: UploadFile = File(...)):
+    # TODO 1: Keep MP2's .csv check, await file.read(), and CSV parsing.
+    # Raise HTTPException with status 400 for an unsupported extension or an expected parsing failure.
     suffix = Path(file.filename or '').suffix.lower()
     if suffix != '.csv':
         logger.warning(f'Unsupported file format: {suffix}')
@@ -41,63 +41,44 @@ async def upload_dataset(file: UploadFile = File(...)):
         logger.warning('Unable to read CSV file')
         raise HTTPException(400, 'Unsupported or unreadable CSV upload')
 
-    dataset_id = storage.save(df, file.filename)
-    metadata = storage.get_metadata(dataset_id)
-
-    filename = metadata['filename']
-    rows = metadata['rows']
-    columns = metadata['columns']
-    column_names = metadata['column_names']
-
-    logger.info(f'Dataset ID: {dataset_id} | Filename: {filename} | Rows: {rows}')
-
-    return DatasetInfo(id=dataset_id, filename=filename, rows=rows, columns=columns, column_names=column_names)
-
-
-@app.post("/upload", response_model=MovieUploadInfo)
-async def upload_movies(file: UploadFile = File(...)):
-    # TODO 1: Keep MP2's .csv check, await file.read(), and CSV parsing.
-    # Raise HTTPException with status 400 for an unsupported extension or an expected parsing failure.
-    suffix = Path(file.filename or '').suffix.lower()
-    if suffix != '.csv':
-        logger.warning(f'Unsupported file format: {suffix}')
-        raise HTTPException(400, 'Unsupported or unreadable CSV upload')
-
     # TODO 2: Quick validation before saving:
     # Require exactly MOVIE_COLUMNS
     # Require at least one data row (hint: Use if df.empty: to check for an empty DataFrame).
     # Raise HTTPException with status 400 if these checks fail.
     # Reorder the columns to match MOVIE_COLUMNS.
 
+    if len(df.columns) != len(MOVIE_COLUMNS) or set(df.columns) != set(MOVIE_COLUMNS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV must contain exactly these columns: {MOVIE_COLUMNS}"
+        )
+
+    if df.empty:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must contain at least one data row"
+        )
+
+    df = df[MOVIE_COLUMNS]
+
     # TODO 3: Call storage.save(df) to replace the current collection.
+    storage.save(df)
     # Log the filename and saved row count at INFO.
+    logger.info(f'Movie upload successful. \n Filename: {file.filename} | Rows: {len(df)}')
     # Return filename, rows, columns, and column_names for this upload.
-    pass
-
-# TODO DELETE AFTER DONE UPDATING NEW GET FUNCTION
-@app.get("/datasets/{dataset_id}")
-def get_dataset(dataset_id: int, limit: int = Query(default=100, ge=1)):
-    """Return up to limit rows from a stored dataset."""
-    df = storage.get(dataset_id)
-    if df is None:
-        logger.warning('Dataset not found')
-        raise HTTPException(404,' Dataset ID not found')
-
-    records = json.loads(df.head(limit).to_json(orient='records'))
-    logger.info(f'Returned dataset id: {dataset_id} | Returned Rows {len(df.head(limit))}')
-    return {
-        'id': dataset_id,
-        'data': records,
-        'total_rows': len(df),
-    }
+    return DatasetInfo(filename=file.filename, rows=df.shape[0], columns=df.shape[1], column_names=df.columns())
 
 @app.get("/movies", response_model=MovieDataResponse)
 def get_movies(limit: int = Query(default=100, ge=1)):
     # TODO: Use MovieStorage methods to retrieve up to limit rows and count the total number of stored movies.
-    # Return {"data": ..., "total_rows": ...}.
-    # If empty, return {"data": [], "total_rows": 0}.
+    rows = storage.select_columns("*", limit)
+    count = storage.count_movies()
     # Log the row count at INFO.
-    pass
+    logger.info(f'Returned {len(rows)} rows')
+    # Return {"data": ..., "total_rows": ...}.
+    if rows is None:
+        return {"data": [], "total_rows": []}
+    return {"data": rows, "total_rows": count}
 
 # TODO DELETE AFTER UPDATE
 @app.post(
