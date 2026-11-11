@@ -80,18 +80,16 @@ def get_movies(limit: int = Query(default=100, ge=1)):
         return {"data": [], "total_rows": []}
     return {"data": rows, "total_rows": count}
 
-# TODO DELETE AFTER UPDATE
-@app.post(
-    "/datasets/{dataset_id}/process",
-    response_model=ProcessingReport
-)
-def process_dataset(dataset_id: int, config: ProcessConfig):
-    """Validate and process a stored dataset using MP1 functions."""
-    # TODO: retrieve, validate, process, report, update, and return.
-
-    df = storage.get(dataset_id)
+@app.post("/movies/process", response_model=MovieProcessingReport)
+def process_movies(config: ProcessConfig):
+    # TODO 1: Retrieve data using storage.get().
+    # Raise HTTPException with status 400 if empty.
+    df = storage.get()
     if df is None:
-        raise HTTPException(404,' Dataset ID not found')
+        raise HTTPException(404,' Data is empty')
+
+    # TODO 2: Reuse MP2's configuration, validation, processing,
+    # cleaning report, logging, and ValueError handling.
 
     config = config.model_dump()
 
@@ -108,10 +106,10 @@ def process_dataset(dataset_id: int, config: ProcessConfig):
     # Validate
     try:
         df_validated = validate_dataframe(df, config.get('validation', {}).get('required_columns', {}),
-                                    config.get('validation', {}).get('numeric_columns', {}))
+                                          config.get('validation', {}).get('numeric_columns', {}))
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
-        
+
     # Validated Rows removed
     df_validated_copy = df_validated.copy()
     rows_removed = len(df_original) - len(df_validated_copy)
@@ -125,32 +123,12 @@ def process_dataset(dataset_id: int, config: ProcessConfig):
     # Report
     report = create_cleaning_report(df_validated_copy, df_processed)
 
-    # Update
-    storage.update(dataset_id, df_processed)
-
-    # Log
-    logger.info(
-        f'Processed dataset: id={dataset_id} '
-        f'validation_removed={rows_removed}, rows_before={len(df_validated_copy)}, rows_after={len(df_processed)}'
-    )
-
-    # Return
-    return {'id': dataset_id,
-            'validation_rows_removed':rows_removed,
-            'cleaning_report':report
-            }
-
-@app.post("/movies/process", response_model=MovieProcessingReport)
-def process_movies(config: ProcessConfig):
-    # TODO 1: Retrieve data using storage.get().
-    # Raise HTTPException with status 400 if empty.
-
-    # TODO 2: Reuse MP2's configuration, validation, processing,
-    # cleaning report, logging, and ValueError handling.
-
     # TODO 3: Save the processed DataFrame using storage.save().
+    storage.save(df_processed)
     # Return validation_rows_removed and cleaning_report without a dataset ID.
-    pass
+    return {'validated_rows_removed': rows_removed,
+            'cleaning_report': report
+            }
 
 @app.get("/movies/search", response_model=list[dict])
 def query_movies(
