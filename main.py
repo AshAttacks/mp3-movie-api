@@ -62,6 +62,7 @@ async def upload_movies(file: UploadFile = File(...)):
 
     # TODO 3: Call storage.save(df) to replace the current collection.
     storage.save(df)
+    cache.invalidate()
     # Log the filename and saved row count at INFO.
     logger.info("Uploaded movies: filename=%s, rows=%d", file.filename, len(df))
     # Return filename, rows, columns, and column_names for this upload.
@@ -70,13 +71,23 @@ async def upload_movies(file: UploadFile = File(...)):
 
 @app.get("/movies", response_model=MovieDataResponse)
 def get_movies(limit: int = Query(default=100, ge=1)):
-    # TODO: Use MovieStorage methods to retrieve up to limit rows and count the total number of stored movies.
+    # TODO 1: Look up the response using cache.get(limit).
+    # If it is not None, log the cache hit at INFO and return it.
+    cache_response = cache.get(limit)
+    if cache_response is not None:
+        logger.info("Hit")
+        return cache_response
+    logger.info("Miss")
+    # Keep Part 1's SQL retrieval, total count, and response construction here.
     rows = storage.select_columns(MOVIE_COLUMNS, limit)
     count = storage.count_movies()
-    # Log the row count at INFO.
+    response = {"data": rows, "total_rows": count}
+    # TODO 2: Before the existing return, cache the complete response
+    # using cache.set(limit, response).
+    cache.set(limit, response)
+    # Keep the existing row-count log and return.
     logger.info(f"Retrieved movies: returned_rows = {len(rows)}, total_rows={count}")
-    # Return {"data": ..., "total_rows": ...}.
-    return {"data": rows, "total_rows": count}
+    return response
 
 @app.post("/movies/process", response_model=MovieProcessingReport)
 def process_movies(config: ProcessConfig):
@@ -124,6 +135,7 @@ def process_movies(config: ProcessConfig):
     # TODO 3: Save the processed DataFrame using storage.save().
     # Keep the fixed SQLite schema when processing drops a column.
     storage.save(df_processed.reindex(columns=MOVIE_COLUMNS))
+    cache.invalidate()
     logger.info(
         f"Processed movies: validation_removed={rows_removed}, "
         f"rows_before={len(df_validated_copy)}, rows_after={len(df_processed)}")
