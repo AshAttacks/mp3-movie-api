@@ -37,6 +37,8 @@ python -m pytest tests -v
 
 With the API running, upload the sample CSV and process it with the default settings.
 
+``POST /movies/process``
+
 The processing request will return HTTP 200. The expected result: removes two duplicate rows 
 and leaving 18 movies.
 
